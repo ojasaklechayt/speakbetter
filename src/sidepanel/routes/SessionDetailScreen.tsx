@@ -7,6 +7,7 @@ type SessionDetailScreenProps = {
 
 function SessionDetailScreen({ sessionId, onBack }: SessionDetailScreenProps) {
   const session = mockSessions.find((item) => item.id === sessionId) ?? mockSessions[0]
+  const improvementMoments = buildImprovementMoments(session)
 
   return (
     <div className="flex h-full flex-col bg-[#fcfaf7]">
@@ -40,35 +41,36 @@ function SessionDetailScreen({ sessionId, onBack }: SessionDetailScreenProps) {
             <div className="rounded-2xl bg-slate-950 px-3 py-4 text-center text-white">
               <p className="text-[10px] uppercase tracking-[0.14em] text-slate-300">Confidence</p>
               <p className="mt-2 text-3xl font-semibold leading-none">{session.confidence}</p>
-              <p className="mt-3 text-sm text-slate-300">Relevance {session.relevance}</p>
             </div>
           </div>
         </section>
 
-        <section className="mt-4 grid grid-cols-2 gap-3">
-          <MetricCard label="Total fillers" value={session.fillers} />
-          <MetricCard label="Fillers per min" value={session.fillersPerMinute} />
-          <MetricCard label="Average pause" value={session.averagePause} />
-          <MetricCard label="Longest pause" value={session.longestPause} />
-          <MetricCard label="Average WPM" value={session.pace} />
-          <MetricCard label="Hesitations" value={session.hesitationCount} />
+        <section className="mt-4">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+            Metrics
+          </p>
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            <MetricCard label="Total fillers" value={session.fillers} />
+            <MetricCard label="Fillers per min" value={session.fillersPerMinute} />
+            <MetricCard label="Average pause" value={session.averagePause} />
+            <MetricCard label="Longest pause" value={session.longestPause} />
+            <MetricCard label="Average WPM" value={session.pace} />
+            <MetricCard label="Hesitations" value={session.hesitationCount} />
+          </div>
         </section>
 
-        <section className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-sm font-semibold text-slate-950">Timeline review</p>
-          <div className="mt-4 space-y-3">
-            <TimelineRow
-              label="Opening"
-              detail="Slightly hesitant start, then stable pacing."
+        <section className="mt-4">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+            Major points
+          </p>
+          <div className="mt-2 space-y-2">
+          {improvementMoments.map((moment) => (
+            <ImprovementMomentCard
+              key={moment.detail}
+              detail={moment.detail}
+              example={moment.example}
             />
-            <TimelineRow
-              label="Middle"
-              detail="Strongest confidence and clearest answer structure."
-            />
-            <TimelineRow
-              label="Closing"
-              detail="A few longer pauses before direct answers."
-            />
+          ))}
           </div>
         </section>
 
@@ -89,20 +91,45 @@ function SessionDetailScreen({ sessionId, onBack }: SessionDetailScreenProps) {
 
 function MetricCard({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">{label}</p>
-      <p className="mt-2 text-lg font-semibold text-slate-950">{value}</p>
+    <div className="rounded-xl border border-slate-200 bg-white px-2.5 py-2 shadow-sm">
+      <div className="flex flex-col gap-1">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">{label}</p>
+        <p className="text-lg font-semibold leading-none text-slate-950">{value}</p>
+      </div>
     </div>
   )
 }
 
-function TimelineRow({ label, detail }: { label: string; detail: string }) {
+function ImprovementMomentCard({
+  detail,
+  example,
+}: {
+  detail: string
+  example: string
+}) {
   return (
     <div className="rounded-xl bg-slate-50 px-3 py-3">
-      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">{label}</p>
-      <p className="mt-2 text-sm leading-6 text-slate-600">{detail}</p>
+      <p className="text-sm font-medium leading-6 text-slate-900">{detail}</p>
+      <p className="mt-1 text-sm leading-6 text-slate-600">"{example}"</p>
     </div>
   )
+}
+
+function buildImprovementMoments(session: SessionRecord) {
+  return [
+    {
+      detail: session.actions[0] ?? 'Lead with the answer first.',
+      example: session.transcript[0] ?? '',
+    },
+    {
+      detail: session.weaknesses[0] ?? 'Trim setup language.',
+      example: session.transcript[1] ?? session.transcript[0] ?? '',
+    },
+    {
+      detail: session.actions[1] ?? 'End with a firmer takeaway.',
+      example: session.transcript[2] ?? session.transcript[1] ?? '',
+    },
+  ]
 }
 
 function TwoColumnLists({ session }: { session: SessionRecord }) {

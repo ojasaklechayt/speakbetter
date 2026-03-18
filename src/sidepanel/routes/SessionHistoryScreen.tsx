@@ -6,6 +6,11 @@ type SessionHistoryScreenProps = {
 }
 
 function SessionHistoryScreen({ onBack, onOpenSessionDetail }: SessionHistoryScreenProps) {
+  const sessionCount = mockSessions.length
+  const averageConfidence = Math.round(
+    mockSessions.reduce((total, session) => total + Number(session.confidence), 0) / sessionCount,
+  )
+
   return (
     <div className="flex h-full flex-col bg-[#fcfaf7]">
       <div className="flex-1 overflow-y-auto px-5 py-5">
@@ -26,37 +31,27 @@ function SessionHistoryScreen({ onBack, onOpenSessionDetail }: SessionHistoryScr
         </header>
 
         <section className="mt-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="grid grid-cols-3 gap-4">
-            <div className="min-w-0">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="flex min-h-24 flex-col justify-between rounded-xl bg-slate-50 px-4 py-3">
               <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Sessions</p>
-              <div className="mt-4 min-h-12">
-                <p className="text-2xl font-semibold leading-none text-slate-950">12</p>
-              </div>
+              <p className="text-2xl font-semibold leading-none text-slate-950">{sessionCount}</p>
             </div>
-            <div className="min-w-0">
+            <div className="flex min-h-24 flex-col justify-between rounded-xl bg-slate-50 px-4 py-3">
               <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Avg confidence</p>
-              <div className="mt-4 min-h-12">
-                <p className="text-2xl font-semibold leading-none text-slate-950">82</p>
-              </div>
-            </div>
-            <div className="min-w-0">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Best recent</p>
-              <div className="mt-4 min-h-12">
-                <p className="text-2xl font-semibold leading-none text-slate-950">84</p>
-              </div>
+              <p className="text-2xl font-semibold leading-none text-slate-950">{averageConfidence}</p>
             </div>
           </div>
         </section>
 
-        <section className="mt-4 flex gap-2 overflow-x-auto pb-1">
-          {['This week', 'Google Meet', 'Confidence 75+', 'Pacing'].map((chip) => (
-            <div
-              key={chip}
-              className="cursor-pointer rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-800"
-            >
-              {chip}
-            </div>
-          ))}
+        <section className="mt-4 rounded-[1.6rem] border border-amber-200 bg-[linear-gradient(135deg,#fff7df_0%,#fffdf7_52%,#ffffff_100%)] p-4 shadow-sm">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-700">Hot tip</p>
+          <p className="mt-3 text-base font-semibold leading-6 text-slate-950">
+            Lead with the answer in your first sentence, then add context after.
+          </p>
+          <p className="mt-2 text-sm leading-6 text-slate-600">
+            Your recent sessions are strongest when pacing stays steady. The clearest improvement
+            area is shortening setup phrases and long pauses before key points.
+          </p>
         </section>
 
         <section className="mt-5 space-y-5">

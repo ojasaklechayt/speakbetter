@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import DashboardScreen from './DashboardScreen'
 import LiveCoachingScreen from './LiveCoachingScreen'
@@ -7,6 +7,7 @@ import SessionDetailScreen from './SessionDetailScreen'
 import SessionHistoryScreen from './SessionHistoryScreen'
 import SettingsScreen from './SettingsScreen'
 import { mockSessions } from './mockData'
+import { sessionManager } from '../../services'
 
 type FormState = {
   name: string
@@ -25,43 +26,43 @@ function OnboardingScreen() {
     password: '',
     googleApiKey: '',
   })
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true)
   const [submitted, setSubmitted] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [showApiKey, setShowApiKey] = useState(false)
-  const [touched, setTouched] = useState<Record<keyof FormState, boolean>>({
-    name: false,
-    password: false,
-    googleApiKey: false,
-  })
-
-  const errors = useMemo(
-    () => ({
-      name:
-        values.name.trim().length === 0
-          ? 'Name is required.'
-          : values.name.trim().length < 2
-            ? 'Name must be at least 2 characters.'
-            : '',
-      password:
-        values.password.length === 0
-          ? 'Password is required.'
-          : values.password.length < 6
-            ? 'Password must be at least 6 characters.'
-            : '',
-      googleApiKey:
-        values.googleApiKey.trim().length === 0
-          ? 'Google API key is required.'
-          : values.googleApiKey.trim().length < 20
-            ? 'Google API key looks incomplete.'
-            : '',
-    }),
-    [values],
-  )
 
   const ready =
     values.name.trim().length > 0 &&
     values.password.trim().length > 0 &&
     values.googleApiKey.trim().length > 0
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadAuthState() {
+      const loggedIn = await sessionManager.isLoggedIn()
+
+      if (cancelled) {
+        return
+      }
+
+      if (loggedIn) {
+        setSubmitted(true)
+        setScreen('dashboard')
+      } else {
+        setSubmitted(false)
+        setScreen('onboarding')
+      }
+
+      setIsCheckingAuth(false)
+    }
+
+    void loadAuthState()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   function updateField(field: keyof FormState, value: string) {
     setValues((current) => ({
@@ -70,22 +71,16 @@ function OnboardingScreen() {
     }))
   }
 
-  function markTouched(field: keyof FormState) {
-    setTouched((current) => ({
-      ...current,
-      [field]: true,
-    }))
-  }
-
-  function handleContinue() {
+  async function handleContinue() {
     if (!ready) {
-      setTouched({
-        name: true,
-        password: true,
-        googleApiKey: true,
-      })
       return
     }
+
+    await sessionManager.setAuth({
+      username: values.name.trim(),
+      password: values.password,
+      apiKey: values.googleApiKey.trim(),
+    })
 
     setSubmitted(true)
     setScreen('dashboard')
@@ -153,6 +148,14 @@ function OnboardingScreen() {
     return <SettingsScreen onBack={() => setScreen('dashboard')} />
   }
 
+  if (isCheckingAuth) {
+    return (
+      <div className="flex h-full items-center justify-center px-5 py-6 text-sm text-slate-500">
+        Loading...
+      </div>
+    )
+  }
+
   return (
     <div className="flex h-full flex-col px-5 py-6">
       <div className="mx-auto flex w-full max-w-[360px] flex-1 flex-col justify-center">
@@ -170,8 +173,6 @@ function OnboardingScreen() {
             value={values.name}
             placeholder="Enter your name"
             onChange={(value) => updateField('name', value)}
-            onBlur={() => markTouched('name')}
-            error={touched.name ? errors.name : ''}
           />
 
           <Field
@@ -180,8 +181,6 @@ function OnboardingScreen() {
             value={values.password}
             placeholder="Enter your password"
             onChange={(value) => updateField('password', value)}
-            onBlur={() => markTouched('password')}
-            error={touched.password ? errors.password : ''}
             action={
               <button
                 type="button"
@@ -199,8 +198,6 @@ function OnboardingScreen() {
             value={values.googleApiKey}
             placeholder="Enter your Google API key"
             onChange={(value) => updateField('googleApiKey', value)}
-            onBlur={() => markTouched('googleApiKey')}
-            error={touched.googleApiKey ? errors.googleApiKey : ''}
             action={
               <button
                 type="button"
@@ -238,8 +235,6 @@ function Field({
   value,
   placeholder,
   onChange,
-  onBlur,
-  error,
   action,
 }: {
   label: string
@@ -247,8 +242,6 @@ function Field({
   value: string
   placeholder: string
   onChange: (value: string) => void
-  onBlur: () => void
-  error: string
   action?: React.ReactNode
 }) {
   return (
@@ -261,13 +254,9 @@ function Field({
         type={type}
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        onBlur={onBlur}
         placeholder={placeholder}
-        className={`w-full rounded-lg border px-3 py-3 text-sm text-slate-900 outline-none transition ${
-          error ? 'border-red-300 focus:border-red-400' : 'border-slate-300 hover:border-slate-400 focus:border-slate-500'
-        }`}
+        className="w-full rounded-lg border border-slate-300 px-3 py-3 text-sm text-slate-900 outline-none transition hover:border-slate-400 focus:border-slate-500"
       />
-      {error ? <p className="mt-2 text-xs text-red-600">{error}</p> : null}
     </div>
   )
 }

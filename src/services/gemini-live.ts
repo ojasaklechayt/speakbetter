@@ -1,5 +1,7 @@
+import systemPrompt from '../assets/SystemPrompt.md?raw'
+import { sessionManager } from './session-manager'
+
 type GoogleLiveOptions = {
-  apiKey: string
   model?: string
   systemInstruction?: string
   onInputTranscript?: (text: string) => void
@@ -22,11 +24,11 @@ type GoogleLiveMessage = {
 }
 
 const DEFAULT_MODEL = 'models/gemini-2.5-flash-native-audio-preview-12-2025'
-const DEFAULT_SYSTEM_INSTRUCTION = 'Transcribe the user audio and respond in text only.'
+const DEFAULT_SYSTEM_INSTRUCTION = systemPrompt
 
 export class GoogleLiveService {
   private ws: WebSocket | null = null
-  private readonly apiKey: string
+  private apiKey = ''
   private readonly model: string
   private readonly systemInstruction: string
   private readonly onInputTranscript?: (text: string) => void
@@ -36,8 +38,7 @@ export class GoogleLiveService {
   private readonly onError?: (event: Event) => void
   private readonly onMessage?: (data: unknown) => void
 
-  constructor(options: GoogleLiveOptions) {
-    this.apiKey = options.apiKey
+  constructor(options: GoogleLiveOptions = {}) {
     this.model = options.model ?? DEFAULT_MODEL
     this.systemInstruction =
       options.systemInstruction ?? DEFAULT_SYSTEM_INSTRUCTION
@@ -49,9 +50,19 @@ export class GoogleLiveService {
     this.onMessage = options.onMessage
   }
 
-  connect() {
+  async connect() {
     if (this.ws && this.ws.readyState !== WebSocket.CLOSED) {
       return
+    }
+
+    // Load the persisted API key on first connect after startup or refresh.
+    if (!this.apiKey) {
+      const auth = await sessionManager.getAuth()
+      this.apiKey = auth?.apiKey ?? ''
+    }
+
+    if (!this.apiKey) {
+      throw new Error('GoogleLiveService requires an API key before connect().')
     }
 
     const url =
@@ -146,3 +157,5 @@ export class GoogleLiveService {
     return btoa(binary)
   }
 }
+
+export const googleService = new GoogleLiveService()

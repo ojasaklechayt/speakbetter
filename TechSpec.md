@@ -28,12 +28,12 @@ Frontend and extension shell:
 * Vite using the official React + TypeScript template
 * Chrome Extension Manifest V3
 * `chrome.sidePanel`
-* `chrome.storage.local`
+* IndexedDB for local persistence
 
 State and local data:
 
 * React Context or Zustand for in-memory UI state
-* thin repository layer over `chrome.storage.local`
+* thin repository layer over IndexedDB object stores
 
 External providers:
 
@@ -149,7 +149,7 @@ This keeps the extension simpler and aligned with the feature spec.
 3. User enters:
    * display name
    * Gemini API key
-4. App validates only basic completeness and stores data in `chrome.storage.local`.
+4. App validates only basic completeness and stores data in IndexedDB.
 5. User is routed to the main dashboard.
 
 ## 4.2 Start coaching
@@ -239,11 +239,12 @@ Notes:
 
 ## 6.1 Session repository
 
-Wrapper over `chrome.storage.local`.
+Wrapper over IndexedDB-backed local storage.
 
 Responsibilities:
 
 * save and load profile
+* save and load auth details
 * save active session pointer
 * create session shell
 * append transcript chunks
@@ -251,15 +252,16 @@ Responsibilities:
 * finalize session
 * list session summaries
 * load session detail
-* export all session JSON
+* export all session data as JSON when needed
 
-Primary storage keys:
+Primary IndexedDB object stores:
 
 * `profile`
 * `settings`
-* `active_session_id`
-* `sessions_index`
-* `session:<session_id>`
+* `auth`
+* `activeSession`
+* `sessionSummaries`
+* `sessions`
 
 ## 6.2 Gemini Live client
 
@@ -323,6 +325,7 @@ MVP implementation:
 Responsibility:
 
 Coordinate the active session lifecycle between the side panel, Gemini Live, and local storage.
+Coordinate the active session lifecycle between the side panel, Gemini Live, and IndexedDB.
 
 Responsibilities:
 
@@ -415,7 +418,7 @@ interface CoachingSession {
 
 ## 7.2 Storage shape
 
-`sessions_index` should store only lightweight list data:
+The `sessionSummaries` object store should contain only lightweight list data:
 
 ```json
 [
@@ -436,7 +439,8 @@ Rationale:
 
 * fast history screen loading
 * avoids reading full transcripts for list view
-* keeps detailed data isolated per session
+* keeps detailed session records isolated by `sessionId`
+* keeps auth details separate from session records
 
 ---
 
@@ -682,7 +686,8 @@ This reduces review friction and security surface area.
 
 Persist:
 
-* profile and keys
+* profile
+* auth details and keys
 * session metadata
 * transcript chunks
 * timeline snapshots
@@ -779,7 +784,7 @@ Fallback behavior with AI analysis disabled:
 
 ## 14.1 MVP security posture
 
-Because there is no backend, API keys live on the user's machine in extension storage.
+Because there is no backend, auth details and API keys live on the user's machine in IndexedDB.
 
 Implications:
 
@@ -826,6 +831,7 @@ Test these first:
 * confidence score formula
 * relevance keyword overlap
 * storage repository read/write behavior
+* IndexedDB repository read/write behavior
 
 ## 16.2 Integration tests
 
@@ -846,7 +852,7 @@ Verify:
 * microphone permission flow works
 * Gemini Live session connects with valid key
 * partial session survives unexpected panel close
-* sessions remain after browser restart
+* sessions remain after app/browser restart because they are stored in IndexedDB
 
 ---
 
@@ -859,7 +865,7 @@ Deliver:
 * Manifest V3 app
 * React side panel shell
 * onboarding
-* profile/settings persistence
+* profile/auth/settings IndexedDB persistence
 * background messaging skeleton
 
 ## Phase 2: Session lifecycle and transcript streaming

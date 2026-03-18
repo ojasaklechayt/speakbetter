@@ -54,14 +54,7 @@ function DashboardScreen({
             </div>
           ))}
         </section>
-
-        <section className="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
-          <p className="text-sm font-semibold text-slate-950">Current status</p>
-          <p className="mt-2 text-sm leading-6 text-slate-600">
-            SpeakBetter is ready for a new session. Start whenever you want and review the session details after it ends.
-          </p>
-        </section>
-
+        
         <section className="mt-5">
           <div className="mb-3 flex items-center justify-between gap-3">
             <h3 className="text-sm font-semibold text-slate-950">Recent sessions</h3>
@@ -82,16 +75,11 @@ function DashboardScreen({
                 onClick={() => onOpenSessionDetail?.(session.id)}
                 className="block w-full cursor-pointer rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md active:translate-y-0"
               >
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-semibold text-slate-950">{session.title}</p>
-                    <p className="mt-1 text-xs text-slate-500">
-                      {session.time} • {session.duration}
-                    </p>
-                  </div>
-                  <div className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
-                    {session.confidence}
-                  </div>
+                <div>
+                  <p className="text-sm font-semibold text-slate-950">{session.title}</p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {session.time} • {session.duration}
+                  </p>
                 </div>
 
                 <div className="mt-3 flex gap-2 text-xs text-slate-500">
