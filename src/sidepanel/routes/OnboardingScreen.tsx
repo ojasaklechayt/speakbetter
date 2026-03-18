@@ -40,13 +40,13 @@ function OnboardingScreen() {
     let cancelled = false
 
     async function loadAuthState() {
-      const loggedIn = await sessionManager.isLoggedIn()
+      const auth = await sessionManager.getAuth()
 
       if (cancelled) {
         return
       }
 
-      if (loggedIn) {
+      if (auth?.apiKey) {
         setSubmitted(true)
         setScreen('dashboard')
       } else {
@@ -84,6 +84,16 @@ function OnboardingScreen() {
 
     setSubmitted(true)
     setScreen('dashboard')
+  }
+
+  function handleLogout() {
+    setSubmitted(false)
+    setScreen('onboarding')
+    setValues({
+      name: '',
+      password: '',
+      googleApiKey: '',
+    })
   }
 
   if (submitted && screen === 'dashboard') {
@@ -145,7 +155,12 @@ function OnboardingScreen() {
   }
 
   if (submitted && screen === 'settings') {
-    return <SettingsScreen onBack={() => setScreen('dashboard')} />
+    return (
+      <SettingsScreen
+        onBack={() => setScreen('dashboard')}
+        onLogout={handleLogout}
+      />
+    )
   }
 
   if (isCheckingAuth) {

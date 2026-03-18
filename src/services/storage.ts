@@ -51,6 +51,11 @@ export class IndexedDbDriver {
     return result ?? []
   }
 
+  async delete(storeName: string, key: IDBValidKey) {
+    const store = await this.getObjectStore(storeName, 'readwrite')
+    await this.awaitRequest(store.delete(key))
+  }
+
   private ensureStore(database: IDBDatabase, storeName: string) {
     if (!database.objectStoreNames.contains(storeName)) {
       database.createObjectStore(storeName, { keyPath: 'id' })

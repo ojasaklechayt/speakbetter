@@ -9,7 +9,16 @@ export type Password = string
 
 export type ApiKey = string
 
+export type UserId = string
+
 export interface AuthCredentials {
+  userId: UserId
+  username: Username
+  password: Password
+  apiKey: ApiKey
+}
+
+export interface LoginCredentials {
   username: Username
   password: Password
   apiKey: ApiKey
@@ -92,9 +101,16 @@ export interface PostSessionData {
 }
 
 export interface CommunicationSession {
+  userId: UserId
   metadata: SessionMetadata
   liveSession: LiveSessionData
   postSession: PostSessionData
+}
+
+interface ExportedSessionData {
+  exportedAt: Timestamp
+  auth: AuthCredentials | null
+  sessions: CommunicationSession[]
 }
 
 
@@ -131,10 +147,21 @@ export class SessionManager {
   }
 
   // Step 2: Reset any in-memory auth state first, then persist the latest credentials.
-  async setAuth(credentials: AuthCredentials) {
+  async setAuth(credentials: LoginCredentials) {
+    const existingAuth = await this.getAuth()
+    const nextCredentials: AuthCredentials = existingAuth
+      ? {
+          ...existingAuth,
+          apiKey: credentials.apiKey,
+        }
+      : {
+          userId: this.generateUserId(),
+          ...credentials,
+        }
+
     this.authCredentials = null
-    this.authCredentials = credentials
-    await this.saveAuth(credentials)
+    this.authCredentials = nextCredentials
+    await this.saveAuth(nextCredentials)
   }
 
   // Step 3: Load the current auth record if one exists.
@@ -152,45 +179,81 @@ export class SessionManager {
       return null
     }
 
-    const { username, password, apiKey } = record
-    const credentials = { username, password, apiKey }
+    const { userId, username, password, apiKey } = record
+    const credentials = { userId, username, password, apiKey }
     this.authCredentials = credentials
     return credentials
   }
 
-  // Step 4: Treat a stored API key as the login token for the local app.
-  async isLoggedIn() {
+  // Step 4: Remove the stored auth token and clear the local login state.
+  async logout() {
     const auth = await this.getAuth()
-    return Boolean(auth?.apiKey)
+
+    if (!auth) {
+      this.authCredentials = null
+      return
+    }
+
+    const loggedOutCredentials: AuthCredentials = {
+      ...auth,
+      apiKey: '',
+    }
+
+    this.authCredentials = loggedOutCredentials
+    await this.saveAuth(loggedOutCredentials)
   }
 
-  // Step 5: Add a brand new communication session. Use this once per session id.
-  createSession(session: CommunicationSession) {
+  // Step 5: Export auth and session history as a downloadable JSON backup.
+  async exportData() {
+    const payload: ExportedSessionData = {
+      exportedAt: new Date().toISOString(),
+      auth: await this.getAuth(),
+      sessions: await this.listSessions(),
+    }
+
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {
+      type: 'application/json',
+    })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+
+    link.href = url
+    link.download = `speakbetter-export-${Date.now()}.json`
+    document.body.append(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+  }
+
+  // Step 6: Add a brand new communication session. Use this once per session id.
+  async createSession(session: CommunicationSession) {
+    const sessionWithUser = await this.attachUserId(session)
     const record: SessionRecord = {
-      id: session.metadata.sessionId,
-      ...session,
+      id: sessionWithUser.metadata.sessionId,
+      ...sessionWithUser,
     }
 
     return indexedDbDriver.add(SESSION_STORE, record)
   }
 
-  // Step 6: Replace an existing session with the latest full version.
-  updateSession(session: CommunicationSession) {
+  // Step 7: Replace an existing session with the latest full version.
+  async updateSession(session: CommunicationSession) {
+    const sessionWithUser = await this.attachUserId(session)
     const record: SessionRecord = {
-      id: session.metadata.sessionId,
-      ...session,
+      id: sessionWithUser.metadata.sessionId,
+      ...sessionWithUser,
     }
 
     return indexedDbDriver.put(SESSION_STORE, record)
   }
 
-  // Step 7: Load one communication session by session id.
+  // Step 8: Load one communication session by session id.
   async getSession(sessionId: SessionId) {
     const record = await indexedDbDriver.get<SessionRecord>(SESSION_STORE, sessionId)
     return record ? this.toSession(record) : null
   }
 
-  // Step 8: Load all saved sessions and sort the newest first.
+  // Step 9: Load all saved sessions and sort the newest first.
   async listSessions() {
     const records = await indexedDbDriver.getAll<SessionRecord>(SESSION_STORE)
 
@@ -201,7 +264,7 @@ export class SessionManager {
       )
   }
 
-  // Step 9: Update only the metadata section while keeping the rest of the session intact.
+  // Step 10: Update only the metadata section while keeping the rest of the session intact.
   async updateSessionMetadata(
     sessionId: SessionId,
     updates: Partial<SessionMetadata>,
@@ -216,7 +279,7 @@ export class SessionManager {
     }))
   }
 
-  // Step 10: Update the live session section as coaching data changes during the meeting.
+  // Step 11: Update the live session section as coaching data changes during the meeting.
   async updateLiveSession(
     sessionId: SessionId,
     updates: Partial<LiveSessionData>,
@@ -230,7 +293,7 @@ export class SessionManager {
     }))
   }
 
-  // Step 11: Update the post-session section after the meeting is completed.
+  // Step 12: Update the post-session section after the meeting is completed.
   async updatePostSession(
     sessionId: SessionId,
     updates: Partial<PostSessionData>,
@@ -244,7 +307,7 @@ export class SessionManager {
     }))
   }
 
-  // Step 12: Append a single live transcript point without rebuilding the transcript manually.
+  // Step 13: Append a single live transcript point without rebuilding the transcript manually.
   async appendLiveTranscriptPoint(
     sessionId: SessionId,
     point: LiveSessionData['transcript'][number],
@@ -258,7 +321,7 @@ export class SessionManager {
     }))
   }
 
-  // Step 13: Append a single post-session excerpt during summary generation.
+  // Step 14: Append a single post-session excerpt during summary generation.
   async addPostSessionExcerpt(
     sessionId: SessionId,
     excerpt: PostSessionData['transcriptExcerpts'][number],
@@ -276,7 +339,7 @@ export class SessionManager {
     sessionId: SessionId,
     updater: (session: CommunicationSession) => CommunicationSession,
   ) {
-    // Step 14: Read the current stored session before applying a partial update.
+    // Step 15: Read the current stored session before applying a partial update.
     const session = await this.getSession(sessionId)
 
     if (!session) {
@@ -285,16 +348,34 @@ export class SessionManager {
 
     const updatedSession = updater(session)
 
-    // Step 15: Persist the updated session back into IndexedDB.
+    // Step 16: Persist the updated session back into IndexedDB.
     await this.updateSession(updatedSession)
 
     return updatedSession
   }
 
   private toSession(record: SessionRecord): CommunicationSession {
-    // Step 16: Strip the IndexedDB-only id field before returning app data.
+    // Step 17: Strip the IndexedDB-only id field before returning app data.
     const { id: _id, ...session } = record
     return session
+  }
+
+  private async attachUserId(session: CommunicationSession) {
+    const auth = await this.getAuth()
+
+    if (!auth?.userId) {
+      throw new Error('Cannot save a session without a logged-in user.')
+    }
+
+    return {
+      ...session,
+      userId: auth.userId,
+    }
+  }
+
+  private generateUserId() {
+    const value = crypto.getRandomValues(new Uint32Array(1))[0] % 1000000
+    return value.toString().padStart(6, '0')
   }
 }
 

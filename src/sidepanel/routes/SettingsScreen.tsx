@@ -1,8 +1,20 @@
+import { sessionManager } from '../../services'
+
 type SettingsScreenProps = {
   onBack?: () => void
+  onLogout?: () => void
 }
 
-function SettingsScreen({ onBack }: SettingsScreenProps) {
+function SettingsScreen({ onBack, onLogout }: SettingsScreenProps) {
+  async function handleExportData() {
+    await sessionManager.exportData()
+  }
+
+  async function handleLogout() {
+    await sessionManager.logout()
+    onLogout?.()
+  }
+
   return (
     <div className="flex h-full flex-col bg-[#fcfaf7]">
       <div className="flex-1 overflow-y-auto px-5 py-5">
@@ -27,7 +39,6 @@ function SettingsScreen({ onBack }: SettingsScreenProps) {
 
         <SettingsCard title="Profile" description="Update the identity used across your session history.">
           <Field label="Name" value="ojas" />
-          <Field label="Role" value="Founder" />
         </SettingsCard>
 
         <SettingsCard title="Provider" description="Google API key powers the coaching experience.">
@@ -47,15 +58,17 @@ function SettingsScreen({ onBack }: SettingsScreenProps) {
           <div className="space-y-3">
             <button
               type="button"
+              onClick={handleExportData}
               className="w-full cursor-pointer rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 active:scale-[0.99]"
             >
               Export sessions JSON
             </button>
             <button
               type="button"
+              onClick={handleLogout}
               className="w-full cursor-pointer rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700 transition hover:border-red-300 hover:bg-red-100 active:scale-[0.99]"
             >
-              Clear local data
+              Logout
             </button>
           </div>
         </SettingsCard>
