@@ -4,6 +4,7 @@ type DashboardScreenProps = {
   onOpenSettings?: () => void
   isOnMeetingPage?: boolean
   currentTabUrl?: string
+  isStartingSession?: boolean
 }
 
 function DashboardScreen({
@@ -12,6 +13,7 @@ function DashboardScreen({
   onOpenSettings,
   isOnMeetingPage = false,
   currentTabUrl = '',
+  isStartingSession = false,
 }: DashboardScreenProps) {
   const dashboardScoreTiles = [
     { label: 'Sessions', value: '0', detail: 'no completed sessions yet' },
@@ -106,9 +108,14 @@ function DashboardScreen({
         <button
           type="button"
           onClick={onStartSession}
-          className="pointer-events-auto w-full cursor-pointer rounded-2xl bg-slate-900 px-4 py-4 text-sm font-semibold text-white shadow-[0_18px_40px_rgba(15,23,42,0.18)] transition hover:bg-slate-800 active:scale-[0.99]"
+          disabled={isStartingSession}
+          className={`pointer-events-auto w-full rounded-2xl px-4 py-4 text-sm font-semibold text-white shadow-[0_18px_40px_rgba(15,23,42,0.18)] transition ${
+            isStartingSession
+              ? 'cursor-wait bg-slate-500'
+              : 'cursor-pointer bg-slate-900 hover:bg-slate-800 active:scale-[0.99]'
+          }`}
         >
-          Start Session
+          {isStartingSession ? 'Allow microphone in the new tab...' : 'Start Session'}
         </button>
       </div>
     </div>

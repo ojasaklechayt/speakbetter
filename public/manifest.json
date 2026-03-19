@@ -11,6 +11,13 @@
   "background": {
     "service_worker": "background.js"
   },
+  "content_scripts": [
+    {
+      "matches": ["https://meet.google.com/*"],
+      "js": ["meet-observer.js"],
+      "run_at": "document_idle"
+    }
+  ],
   "side_panel": {
     "default_path": "index.html"
   }

@@ -1,5 +1,6 @@
 const GOOGLE_MEET_HOSTNAME = 'meet.google.com'
 const GOOGLE_MEET_CODE_PATTERN = /^\/[a-z]{3}-[a-z]{4}-[a-z]{3}(\/.*)?$/i
+const MICROPHONE_PERMISSION_PAGE_PATH = 'mic-permission.html'
 
 // Check whether a URL points to a Google Meet room page that can be used for session gating.
 function isSupportedMeetingUrl(url?: string) {
@@ -26,6 +27,8 @@ async function saveMeetingFlag(tab?: chrome.tabs.Tab) {
   await chrome.storage.local.set({
     currentTabUrl: url,
     isOnMeetingPage,
+    isMeetMicrophoneMuted: isOnMeetingPage ? undefined : null,
+    meetMicrophoneLabel: isOnMeetingPage ? undefined : '',
   })
 }
 
@@ -87,4 +90,29 @@ chrome.windows.onFocusChanged.addListener((windowId: number) => {
   }
 
   void refreshFromActiveTab()
+})
+
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message?.type === 'OPEN_MICROPHONE_PERMISSION_PAGE') {
+    void chrome.tabs.create({
+      url: chrome.runtime.getURL(MICROPHONE_PERMISSION_PAGE_PATH),
+      active: true,
+    })
+      .then(() => {
+        sendResponse({ ok: true })
+      })
+      .catch((error: unknown) => {
+        sendResponse({
+          ok: false,
+          error:
+            error instanceof Error
+              ? error.message
+              : 'Microphone permission page could not be opened.',
+        })
+      })
+
+    return true
+  }
+
+  return false
 })

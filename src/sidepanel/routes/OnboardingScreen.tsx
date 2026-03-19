@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 
 import DashboardScreen from './DashboardScreen'
 import LiveCoachingScreen from './LiveCoachingScreen'
-import MicrophonePermissionScreen from './MicrophonePermissionScreen'
 import SessionHistoryScreen from './SessionHistoryScreen'
 import SettingsScreen from './SettingsScreen'
 import { sessionManager } from '../../services'
@@ -12,6 +11,8 @@ type MeetingGateState = {
   isOnMeetingPage: boolean
 }
 
+type MicrophonePermissionState = 'granted' | 'unknown'
+
 type FormState = {
   name: string
   password: string
@@ -20,7 +21,7 @@ type FormState = {
 
 function OnboardingScreen() {
   const [screen, setScreen] = useState<
-    'onboarding' | 'dashboard' | 'microphone' | 'live' | 'history' | 'settings'
+    'onboarding' | 'dashboard' | 'live' | 'history' | 'settings'
   >('onboarding')
   const [values, setValues] = useState<FormState>({
     name: '',
@@ -35,6 +36,10 @@ function OnboardingScreen() {
     currentTabUrl: '',
     isOnMeetingPage: false,
   })
+  const [microphonePermissionState, setMicrophonePermissionState] =
+    useState<MicrophonePermissionState>('unknown')
+  const [isWaitingForMicrophonePermission, setIsWaitingForMicrophonePermission] =
+    useState(false)
 
   const ready =
     values.name.trim().length > 0 &&
@@ -76,8 +81,13 @@ function OnboardingScreen() {
 
     let active = true
 
-    async function loadMeetingGate() {
-      const stored = await chrome.storage.local.get(['currentTabUrl', 'isOnMeetingPage'])
+    async function loadExtensionState() {
+      const stored = await chrome.storage.local.get([
+        'currentTabUrl',
+        'isOnMeetingPage',
+        'microphonePermissionState',
+        'microphonePermissionGrantedAt',
+      ])
 
       if (!active) {
         return
@@ -88,6 +98,9 @@ function OnboardingScreen() {
           typeof stored.currentTabUrl === 'string' ? stored.currentTabUrl : '',
         isOnMeetingPage: stored.isOnMeetingPage === true,
       })
+      setMicrophonePermissionState(
+        stored.microphonePermissionState === 'granted' ? 'granted' : 'unknown',
+      )
     }
 
     function handleStorageChange(
@@ -108,16 +121,35 @@ function OnboardingScreen() {
             ? changes.isOnMeetingPage.newValue
             : current.isOnMeetingPage,
       }))
+
+      if (changes.microphonePermissionState?.newValue === 'granted') {
+        setMicrophonePermissionState('granted')
+      }
+
+      const grantedSignalChanged =
+        typeof changes.microphonePermissionGrantedAt?.newValue === 'number'
+
+      if (
+        isWaitingForMicrophonePermission &&
+        (
+          changes.microphonePermissionState?.newValue === 'granted' ||
+          grantedSignalChanged
+        )
+      ) {
+        setMicrophonePermissionState('granted')
+        setIsWaitingForMicrophonePermission(false)
+        setScreen('live')
+      }
     }
 
-    void loadMeetingGate()
+    void loadExtensionState()
     chrome.storage.onChanged.addListener(handleStorageChange)
 
     return () => {
       active = false
       chrome.storage.onChanged.removeListener(handleStorageChange)
     }
-  }, [])
+  }, [isWaitingForMicrophonePermission])
 
   function updateField(field: keyof FormState, value: string) {
     setValues((current) => ({
@@ -144,6 +176,7 @@ function OnboardingScreen() {
   function handleLogout() {
     setSubmitted(false)
     setScreen('onboarding')
+    setIsWaitingForMicrophonePermission(false)
     setValues({
       name: '',
       password: '',
@@ -151,23 +184,46 @@ function OnboardingScreen() {
     })
   }
 
+  async function handleStartSession() {
+    if (typeof chrome === 'undefined' || !chrome.storage?.local || !chrome.runtime?.sendMessage) {
+      return
+    }
+
+    const stored = await chrome.storage.local.get(['microphonePermissionState'])
+    const hasGrantedMicrophonePermission =
+      stored.microphonePermissionState === 'granted' ||
+      microphonePermissionState === 'granted'
+
+    if (hasGrantedMicrophonePermission) {
+      setMicrophonePermissionState('granted')
+      setScreen('live')
+      return
+    }
+
+    setIsWaitingForMicrophonePermission(true)
+
+    try {
+      const response = await chrome.runtime.sendMessage({
+        type: 'OPEN_MICROPHONE_PERMISSION_PAGE',
+      }) as { ok: boolean; error?: string }
+
+      if (!response.ok) {
+        setIsWaitingForMicrophonePermission(false)
+      }
+    } catch {
+      setIsWaitingForMicrophonePermission(false)
+    }
+  }
+
   if (submitted && screen === 'dashboard') {
     return (
       <DashboardScreen
         currentTabUrl={meetingGate.currentTabUrl}
         isOnMeetingPage={meetingGate.isOnMeetingPage}
-        onStartSession={() => setScreen('microphone')}
+        onStartSession={handleStartSession}
+        isStartingSession={isWaitingForMicrophonePermission}
         onOpenHistory={() => setScreen('history')}
         onOpenSettings={() => setScreen('settings')}
-      />
-    )
-  }
-
-  if (submitted && screen === 'microphone') {
-    return (
-      <MicrophonePermissionScreen
-        onAllow={() => setScreen('live')}
-        onBack={() => setScreen('dashboard')}
       />
     )
   }
@@ -176,6 +232,7 @@ function OnboardingScreen() {
     return (
       <LiveCoachingScreen
         onStop={() => {
+          setIsWaitingForMicrophonePermission(false)
           setScreen('dashboard')
         }}
       />
