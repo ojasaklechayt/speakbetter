@@ -356,7 +356,8 @@ export class SessionManager {
 
   private toSession(record: SessionRecord): CommunicationSession {
     // Step 17: Strip the IndexedDB-only id field before returning app data.
-    const { id: _id, ...session } = record
+    const { id, ...session } = record
+    void id
     return session
   }
 

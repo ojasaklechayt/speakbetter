@@ -1,18 +1,24 @@
-import { dashboardScoreTiles, mockSessions } from './mockData'
-
 type DashboardScreenProps = {
   onStartSession?: () => void
   onOpenHistory?: () => void
   onOpenSettings?: () => void
-  onOpenSessionDetail?: (sessionId: string) => void
+  isOnMeetingPage?: boolean
+  currentTabUrl?: string
 }
 
 function DashboardScreen({
   onStartSession,
   onOpenHistory,
   onOpenSettings,
-  onOpenSessionDetail,
+  isOnMeetingPage = false,
+  currentTabUrl = '',
 }: DashboardScreenProps) {
+  const dashboardScoreTiles = [
+    { label: 'Sessions', value: '0', detail: 'no completed sessions yet' },
+    { label: 'Confidence', value: '--', detail: 'available after your first session' },
+    { label: 'Fillers', value: '--', detail: 'tracked once coaching runs' },
+  ]
+
   return (
     <div className="relative flex h-full flex-col overflow-hidden bg-[#fcfaf7]">
       <div className="flex-1 overflow-y-auto px-5 pb-28 pt-5">
@@ -54,7 +60,27 @@ function DashboardScreen({
             </div>
           ))}
         </section>
-        
+
+        <section
+          className={`mt-5 rounded-2xl border px-4 py-4 ${
+            isOnMeetingPage
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
+              : 'border-amber-200 bg-amber-50 text-amber-900'
+          }`}
+        >
+          <p className="text-[11px] font-semibold uppercase tracking-[0.14em]">
+            Meeting check
+          </p>
+          <p className="mt-2 text-sm font-medium">
+            {isOnMeetingPage
+              ? 'Meeting page detected. You can start a session.'
+              : 'Open an active Google Meet tab to enable session start.'}
+          </p>
+          {currentTabUrl ? (
+            <p className="mt-2 truncate text-xs text-current/70">{currentTabUrl}</p>
+          ) : null}
+        </section>
+
         <section className="mt-5">
           <div className="mb-3 flex items-center justify-between gap-3">
             <h3 className="text-sm font-semibold text-slate-950">Recent sessions</h3>
@@ -67,29 +93,11 @@ function DashboardScreen({
             </button>
           </div>
 
-          <div className="space-y-3">
-            {mockSessions.map((session) => (
-              <button
-                key={session.id}
-                type="button"
-                onClick={() => onOpenSessionDetail?.(session.id)}
-                className="block w-full cursor-pointer rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md active:translate-y-0"
-              >
-                <div>
-                  <p className="text-sm font-semibold text-slate-950">{session.title}</p>
-                  <p className="mt-1 text-xs text-slate-500">
-                    {session.time} • {session.duration}
-                  </p>
-                </div>
-
-                <div className="mt-3 flex gap-2 text-xs text-slate-500">
-                  <span className="rounded-full bg-slate-100 px-2 py-1">{session.pace}</span>
-                  <span className="rounded-full bg-slate-100 px-2 py-1">Confidence {session.confidence}</span>
-                </div>
-
-                <p className="mt-3 text-sm leading-6 text-slate-600">{session.feedback}</p>
-              </button>
-            ))}
+          <div className="rounded-2xl border border-dashed border-slate-300 bg-white/70 p-5 text-center">
+            <p className="text-sm font-semibold text-slate-950">No session history yet</p>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              Start your first coaching session in Google Meet. Completed sessions will appear here.
+            </p>
           </div>
         </section>
       </div>

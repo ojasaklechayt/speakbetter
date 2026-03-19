@@ -3,11 +3,14 @@ import { useEffect, useState } from 'react'
 import DashboardScreen from './DashboardScreen'
 import LiveCoachingScreen from './LiveCoachingScreen'
 import MicrophonePermissionScreen from './MicrophonePermissionScreen'
-import SessionDetailScreen from './SessionDetailScreen'
 import SessionHistoryScreen from './SessionHistoryScreen'
 import SettingsScreen from './SettingsScreen'
-import { mockSessions } from './mockData'
 import { sessionManager } from '../../services'
+
+type MeetingGateState = {
+  currentTabUrl: string
+  isOnMeetingPage: boolean
+}
 
 type FormState = {
   name: string
@@ -17,10 +20,8 @@ type FormState = {
 
 function OnboardingScreen() {
   const [screen, setScreen] = useState<
-    'onboarding' | 'dashboard' | 'microphone' | 'live' | 'history' | 'detail' | 'settings'
+    'onboarding' | 'dashboard' | 'microphone' | 'live' | 'history' | 'settings'
   >('onboarding')
-  const [previousScreen, setPreviousScreen] = useState<'dashboard' | 'history'>('dashboard')
-  const [selectedSessionId, setSelectedSessionId] = useState<string>(mockSessions[0].id)
   const [values, setValues] = useState<FormState>({
     name: '',
     password: '',
@@ -30,6 +31,10 @@ function OnboardingScreen() {
   const [submitted, setSubmitted] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [showApiKey, setShowApiKey] = useState(false)
+  const [meetingGate, setMeetingGate] = useState<MeetingGateState>({
+    currentTabUrl: '',
+    isOnMeetingPage: false,
+  })
 
   const ready =
     values.name.trim().length > 0 &&
@@ -61,6 +66,56 @@ function OnboardingScreen() {
 
     return () => {
       cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    if (typeof chrome === 'undefined' || !chrome.storage?.local) {
+      return
+    }
+
+    let active = true
+
+    async function loadMeetingGate() {
+      const stored = await chrome.storage.local.get(['currentTabUrl', 'isOnMeetingPage'])
+
+      if (!active) {
+        return
+      }
+
+      setMeetingGate({
+        currentTabUrl:
+          typeof stored.currentTabUrl === 'string' ? stored.currentTabUrl : '',
+        isOnMeetingPage: stored.isOnMeetingPage === true,
+      })
+    }
+
+    function handleStorageChange(
+      changes: Record<string, chrome.storage.StorageChange>,
+      areaName: string,
+    ) {
+      if (areaName !== 'local') {
+        return
+      }
+
+      setMeetingGate((current) => ({
+        currentTabUrl:
+          typeof changes.currentTabUrl?.newValue === 'string'
+            ? changes.currentTabUrl.newValue
+            : current.currentTabUrl,
+        isOnMeetingPage:
+          typeof changes.isOnMeetingPage?.newValue === 'boolean'
+            ? changes.isOnMeetingPage.newValue
+            : current.isOnMeetingPage,
+      }))
+    }
+
+    void loadMeetingGate()
+    chrome.storage.onChanged.addListener(handleStorageChange)
+
+    return () => {
+      active = false
+      chrome.storage.onChanged.removeListener(handleStorageChange)
     }
   }, [])
 
@@ -99,14 +154,11 @@ function OnboardingScreen() {
   if (submitted && screen === 'dashboard') {
     return (
       <DashboardScreen
+        currentTabUrl={meetingGate.currentTabUrl}
+        isOnMeetingPage={meetingGate.isOnMeetingPage}
         onStartSession={() => setScreen('microphone')}
         onOpenHistory={() => setScreen('history')}
         onOpenSettings={() => setScreen('settings')}
-        onOpenSessionDetail={(sessionId) => {
-          setSelectedSessionId(sessionId)
-          setPreviousScreen('dashboard')
-          setScreen('detail')
-        }}
       />
     )
   }
@@ -124,9 +176,7 @@ function OnboardingScreen() {
     return (
       <LiveCoachingScreen
         onStop={() => {
-          setSelectedSessionId(mockSessions[0].id)
-          setPreviousScreen('dashboard')
-          setScreen('detail')
+          setScreen('dashboard')
         }}
       />
     )
@@ -136,20 +186,6 @@ function OnboardingScreen() {
     return (
       <SessionHistoryScreen
         onBack={() => setScreen('dashboard')}
-        onOpenSessionDetail={(sessionId) => {
-          setSelectedSessionId(sessionId)
-          setPreviousScreen('history')
-          setScreen('detail')
-        }}
-      />
-    )
-  }
-
-  if (submitted && screen === 'detail') {
-    return (
-      <SessionDetailScreen
-        sessionId={selectedSessionId}
-        onBack={() => setScreen(previousScreen)}
       />
     )
   }
