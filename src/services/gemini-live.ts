@@ -1,15 +1,21 @@
 import systemPrompt from '../assets/SystemPrompt.md?raw'
 import { sessionManager } from './session-manager'
 
+type GoogleLiveHandlers = {
+  onInputTranscript?: (text: string)
+    => void
+  onOutputTranscript?: (text: string)
+    => void
+  onOpen?: () => void
+  onClose?: (event: CloseEvent) =>
+    void
+  onError?: (event: Event) => void
+  onMessage?: (data: unknown) => void
+}
+
 type GoogleLiveOptions = {
   model?: string
   systemInstruction?: string
-  onInputTranscript?: (text: string) => void
-  onOutputTranscript?: (text: string) => void
-  onOpen?: () => void
-  onClose?: (event: CloseEvent) => void
-  onError?: (event: Event) => void
-  onMessage?: (data: unknown) => void
 }
 
 type GoogleLiveMessage = {
@@ -29,33 +35,37 @@ const DEFAULT_SYSTEM_INSTRUCTION = systemPrompt
 export class GoogleLiveService {
   private ws: WebSocket | null = null
   private apiKey = ''
+  private handlers: GoogleLiveHandlers = {}
   private readonly model: string
   private readonly systemInstruction: string
-  private readonly onInputTranscript?: (text: string) => void
-  private readonly onOutputTranscript?: (text: string) => void
-  private readonly onOpen?: () => void
-  private readonly onClose?: (event: CloseEvent) => void
-  private readonly onError?: (event: Event) => void
-  private readonly onMessage?: (data: unknown) => void
 
   constructor(options: GoogleLiveOptions = {}) {
     this.model = options.model ?? DEFAULT_MODEL
     this.systemInstruction =
       options.systemInstruction ?? DEFAULT_SYSTEM_INSTRUCTION
-    this.onInputTranscript = options.onInputTranscript
-    this.onOutputTranscript = options.onOutputTranscript
-    this.onOpen = options.onOpen
-    this.onClose = options.onClose
-    this.onError = options.onError
-    this.onMessage = options.onMessage
+  }
+
+  setHandlers(handlers: GoogleLiveHandlers) {
+    this.handlers = handlers
   }
 
   async connect() {
-    if (this.ws && this.ws.readyState !== WebSocket.CLOSED) {
+    const current = this.ws
+
+    if (
+      current &&
+      (current.readyState === WebSocket.CONNECTING ||
+        current.readyState === WebSocket.OPEN)
+    ) {
       return
     }
 
-    // Load the persisted API key on first connect after startup or refresh.
+    // If an older socket is still finishing its close handshake, drop the ref
+    // and create a fresh one.
+    if (current && current.readyState === WebSocket.CLOSING) {
+      this.ws = null
+    }
+
     if (!this.apiKey) {
       const auth = await sessionManager.getAuth()
       this.apiKey = auth?.apiKey ?? ''
@@ -68,16 +78,21 @@ export class GoogleLiveService {
     const url =
       `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${this.apiKey}`
 
-    this.ws = new WebSocket(url)
+    const ws = new WebSocket(url)
+    this.ws = ws
 
-    this.ws.onopen = () => {
-      this.ws?.send(
+    ws.onopen = () => {
+      console.log('[GoogleLiveService] WebSocket opened')
+
+      ws.send(
         JSON.stringify({
           setup: {
             model: this.model,
             generationConfig: {
-              responseModalities: ['TEXT'],
+              responseModalities: ['AUDIO'],
             },
+            inputAudioTranscription: {},
+            outputAudioTranscription: {},
             systemInstruction: {
               parts: [{ text: this.systemInstruction }],
             },
@@ -85,45 +100,86 @@ export class GoogleLiveService {
         }),
       )
 
-      this.onOpen?.()
+      this.handlers.onOpen?.()
     }
 
-    this.ws.onmessage = (event) => {
-      const data = JSON.parse(event.data) as GoogleLiveMessage
+    ws.onmessage = (event) => {
+      if (event.data instanceof Blob) {
+        return
+      }
 
-      this.onMessage?.(data)
+      if (typeof event.data !== 'string') {
+        console.warn(
+          '[GoogleLiveService] Unsupported WebSocket message type:',
+          event.data,
+        )
+        return
+      }
 
-      const inputText = data.serverContent?.inputTranscription?.text
-      const outputText = data.serverContent?.outputTranscription?.text
+      console.log('[GoogleLiveService] Raw JSON message', event.data)
+
+      let data: unknown
+
+      try {
+        data = JSON.parse(event.data) as GoogleLiveMessage
+      } catch (error) {
+        console.error(
+          '[GoogleLiveService] Failed to parse WebSocket message:',
+          error,
+          event.data,
+        )
+        return
+      }
+
+      this.handlers.onMessage?.(data)
+
+      const message = data as GoogleLiveMessage
+      const inputText = message.serverContent?.inputTranscription?.text
+      const outputText = message.serverContent?.outputTranscription?.text
 
       if (inputText) {
-        this.onInputTranscript?.(inputText)
+        console.log('[GoogleLiveService] Input transcript', inputText)
+        this.handlers.onInputTranscript?.(inputText)
       }
 
       if (outputText) {
-        this.onOutputTranscript?.(outputText)
+        console.log('[GoogleLiveService] Output transcript', outputText)
+        this.handlers.onOutputTranscript?.(outputText)
       }
     }
 
-    this.ws.onerror = (event) => {
-      this.onError?.(event)
+    ws.onerror = (event) => {
+      console.error('[GoogleLiveService] WebSocket error:', event)
+      this.handlers.onError?.(event)
     }
 
-    this.ws.onclose = (event) => {
-      this.ws = null
-      this.onClose?.(event)
+    ws.onclose = (event) => {
+      console.log('[GoogleLiveService] WebSocket closed', {
+        code: event.code,
+        reason: event.reason,
+        wasClean: event.wasClean,
+      })
+
+      // Only clear the ref if this close belongs to the current socket.
+      if (this.ws === ws) {
+        this.ws = null
+      }
+
+      this.handlers.onClose?.(event)
     }
   }
 
   sendAudioChunk(chunk: Uint8Array | ArrayBuffer) {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+    const ws = this.ws
+
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
       return
     }
 
     const bytes = chunk instanceof Uint8Array ? chunk : new Uint8Array(chunk)
     const base64 = this.toBase64(bytes)
 
-    this.ws.send(
+    ws.send(
       JSON.stringify({
         realtimeInput: {
           mediaChunks: [
@@ -138,8 +194,25 @@ export class GoogleLiveService {
   }
 
   disconnect() {
-    this.ws?.close()
-    this.ws = null
+    const ws = this.ws
+
+    if (!ws) {
+      return
+    }
+
+    if (ws.readyState === WebSocket.CLOSING || ws.readyState === WebSocket.CLOSED) {
+      return
+    }
+
+    if (ws.readyState === WebSocket.CONNECTING) {
+      console.log('[GoogleLiveService] Closing WebSocket while connecting')
+      ws.close()
+      return
+    }
+
+    console.log('[GoogleLiveService] Closing WebSocket with normal closure')
+    ws.close(1000, 'Client disconnect')
+    this.handlers = {}
   }
 
   isConnected() {

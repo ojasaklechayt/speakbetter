@@ -4,7 +4,8 @@ import DashboardScreen from './DashboardScreen'
 import LiveCoachingScreen from './LiveCoachingScreen'
 import SessionHistoryScreen from './SessionHistoryScreen'
 import SettingsScreen from './SettingsScreen'
-import { sessionManager } from '../../services'
+import { googleService, liveSessionService, sessionManager } from '../../services'
+import { getMeetingIdFromUrl } from '../../utils/meeting'
 
 type MeetingGateState = {
   currentTabUrl: string
@@ -40,6 +41,8 @@ function OnboardingScreen() {
     useState<MicrophonePermissionState>('unknown')
   const [isWaitingForMicrophonePermission, setIsWaitingForMicrophonePermission] =
     useState(false)
+  const [startSessionError, setStartSessionError] = useState('')
+  const [activeSessionId, setActiveSessionId] = useState('')
 
   const ready =
     values.name.trim().length > 0 &&
@@ -136,9 +139,7 @@ function OnboardingScreen() {
           grantedSignalChanged
         )
       ) {
-        setMicrophonePermissionState('granted')
-        setIsWaitingForMicrophonePermission(false)
-        setScreen('live')
+        void connectToLiveSession()
       }
     }
 
@@ -150,6 +151,12 @@ function OnboardingScreen() {
       chrome.storage.onChanged.removeListener(handleStorageChange)
     }
   }, [isWaitingForMicrophonePermission])
+
+  useEffect(() => {
+    return () => {
+      googleService.disconnect()
+    }
+  }, [])
 
   function updateField(field: keyof FormState, value: string) {
     setValues((current) => ({
@@ -174,9 +181,16 @@ function OnboardingScreen() {
   }
 
   function handleLogout() {
+    googleService.disconnect()
+    googleService.setHandlers({})
+    if (activeSessionId) {
+      void liveSessionService.stop(activeSessionId)
+    }
     setSubmitted(false)
     setScreen('onboarding')
     setIsWaitingForMicrophonePermission(false)
+    setStartSessionError('')
+    setActiveSessionId('')
     setValues({
       name: '',
       password: '',
@@ -189,14 +203,16 @@ function OnboardingScreen() {
       return
     }
 
+    setStartSessionError('')
+
     const stored = await chrome.storage.local.get(['microphonePermissionState'])
     const hasGrantedMicrophonePermission =
       stored.microphonePermissionState === 'granted' ||
       microphonePermissionState === 'granted'
 
     if (hasGrantedMicrophonePermission) {
-      setMicrophonePermissionState('granted')
-      setScreen('live')
+      setIsWaitingForMicrophonePermission(true)
+      await connectToLiveSession()
       return
     }
 
@@ -209,8 +225,68 @@ function OnboardingScreen() {
 
       if (!response.ok) {
         setIsWaitingForMicrophonePermission(false)
+        setStartSessionError(response.error ?? 'Microphone permission request failed.')
       }
     } catch {
+      setIsWaitingForMicrophonePermission(false)
+      setStartSessionError('Microphone permission request failed.')
+    }
+  }
+
+  async function connectToLiveSession() {
+    setMicrophonePermissionState('granted')
+    let sessionId = ''
+
+    try {
+      const session = await liveSessionService.start({
+        meetingId: getMeetingIdFromUrl(meetingGate.currentTabUrl),
+        meetingLink: meetingGate.currentTabUrl || undefined,
+      })
+      sessionId = session.metadata.sessionId
+      setActiveSessionId(sessionId)
+
+      googleService.setHandlers({
+        onInputTranscript: async (text) => {
+          if (!text.trim()) {
+            return
+          }
+
+          await liveSessionService.appendTranscriptPoint(sessionId, text)
+        },
+        onOutputTranscript: async (text) => {
+          if (!text.trim()) {
+            return
+          }
+
+          await liveSessionService.appendTranscriptPoint(
+            sessionId,
+            `[Coach] ${text}`,
+          )
+        },
+        onMessage: async (data) => {
+          console.log('[Gemini message]', data)
+        },
+        onError: (event) => {
+          console.error('[Gemini live error]', event)
+        },
+        onClose: (event) => {
+          console.log('[Gemini live closed]', event)
+        },
+      })
+      await googleService.connect()
+      setScreen('live')
+    } catch (error) {
+      if (sessionId) {
+        void liveSessionService.stop(sessionId)
+        setActiveSessionId('')
+      }
+
+      googleService.setHandlers({})
+
+      setStartSessionError(
+        error instanceof Error ? error.message : 'Unable to start live coaching.',
+      )
+    } finally {
       setIsWaitingForMicrophonePermission(false)
     }
   }
@@ -222,6 +298,7 @@ function OnboardingScreen() {
         isOnMeetingPage={meetingGate.isOnMeetingPage}
         onStartSession={handleStartSession}
         isStartingSession={isWaitingForMicrophonePermission}
+        startSessionError={startSessionError}
         onOpenHistory={() => setScreen('history')}
         onOpenSettings={() => setScreen('settings')}
       />
@@ -232,7 +309,13 @@ function OnboardingScreen() {
     return (
       <LiveCoachingScreen
         onStop={() => {
+          googleService.setHandlers({})
+          if (activeSessionId) {
+            void liveSessionService.stop(activeSessionId)
+          }
           setIsWaitingForMicrophonePermission(false)
+          setStartSessionError('')
+          setActiveSessionId('')
           setScreen('dashboard')
         }}
       />

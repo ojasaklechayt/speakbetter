@@ -5,6 +5,7 @@ type DashboardScreenProps = {
   isOnMeetingPage?: boolean
   currentTabUrl?: string
   isStartingSession?: boolean
+  startSessionError?: string
 }
 
 function DashboardScreen({
@@ -14,6 +15,7 @@ function DashboardScreen({
   isOnMeetingPage = false,
   currentTabUrl = '',
   isStartingSession = false,
+  startSessionError = '',
 }: DashboardScreenProps) {
   const dashboardScoreTiles = [
     { label: 'Sessions', value: '0', detail: 'no completed sessions yet' },
@@ -83,6 +85,15 @@ function DashboardScreen({
           ) : null}
         </section>
 
+        {startSessionError ? (
+          <section className="mt-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-rose-900">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em]">
+              Session start failed
+            </p>
+            <p className="mt-2 text-sm font-medium">{startSessionError}</p>
+          </section>
+        ) : null}
+
         <section className="mt-5">
           <div className="mb-3 flex items-center justify-between gap-3">
             <h3 className="text-sm font-semibold text-slate-950">Recent sessions</h3>
@@ -115,7 +126,7 @@ function DashboardScreen({
               : 'cursor-pointer bg-slate-900 hover:bg-slate-800 active:scale-[0.99]'
           }`}
         >
-          {isStartingSession ? 'Allow microphone in the new tab...' : 'Start Session'}
+          {isStartingSession ? 'Starting session...' : 'Start Session'}
         </button>
       </div>
     </div>

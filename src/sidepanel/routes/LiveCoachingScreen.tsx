@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { googleService, liveAudioService } from '../../services'
 
 type LiveCoachingScreenProps = {
   onStop?: () => void
@@ -16,6 +17,7 @@ function LiveCoachingScreen({ onStop }: LiveCoachingScreenProps) {
     isOnMeetingPage: false,
     isMeetMicrophoneMuted: null,
   })
+  const [audioCaptureError, setAudioCaptureError] = useState('')
 
   const liveMetrics = [
     { label: 'Fillers', value: '--', detail: 'available after speech is captured' },
@@ -90,6 +92,40 @@ function LiveCoachingScreen({ onStop }: LiveCoachingScreenProps) {
     }
   }, [])
 
+  useEffect(() => {
+    let active = true
+
+    async function startLiveAudio() {
+      try {
+        await liveAudioService.start({
+          chunkMs: 5000,
+          onChunk: (chunk) => {
+            googleService.sendAudioChunk(chunk)
+          },
+        })
+
+        if (!active) {
+          await liveAudioService.stop()
+        }
+      } catch (error) {
+        if (!active) {
+          return
+        }
+
+        setAudioCaptureError(
+          error instanceof Error ? error.message : 'Microphone capture could not be started.',
+        )
+      }
+    }
+
+    void startLiveAudio()
+
+    return () => {
+      active = false
+      void liveAudioService.stop()
+    }
+  }, [])
+
   const muteStatusLabel =
     extensionState.isMeetMicrophoneMuted === true
       ? 'Meet microphone muted'
@@ -98,13 +134,21 @@ function LiveCoachingScreen({ onStop }: LiveCoachingScreenProps) {
         : 'Waiting for Meet microphone state'
 
   const coachingStatus =
-    extensionState.isOnMeetingPage === false
+    audioCaptureError
+      ? audioCaptureError
+      : extensionState.isOnMeetingPage === false
       ? 'Open Google Meet to begin the live coaching session.'
       : extensionState.isMeetMicrophoneMuted === true
         ? 'Your Meet microphone is muted. Unmute it to resume live coaching.'
         : extensionState.isMeetMicrophoneMuted === false
           ? 'Monitoring your session and waiting for coaching signals.'
           : 'Waiting for Meet controls to load.'
+
+  function handleStop() {
+    void liveAudioService.stop()
+    googleService.disconnect()
+    onStop?.()
+  }
 
   return (
     <div className="relative flex h-full flex-col bg-[#fcfaf7] text-slate-900">
@@ -122,7 +166,7 @@ function LiveCoachingScreen({ onStop }: LiveCoachingScreenProps) {
           </div>
           <button
             type="button"
-            onClick={onStop}
+            onClick={handleStop}
             className="cursor-pointer rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 active:scale-[0.98]"
           >
             Stop
@@ -180,7 +224,7 @@ function LiveCoachingScreen({ onStop }: LiveCoachingScreenProps) {
       <div className="absolute inset-x-0 bottom-0 border-t border-slate-200 bg-[#fcfaf7]/95 px-5 py-4 backdrop-blur">
         <button
           type="button"
-          onClick={onStop}
+          onClick={handleStop}
           className="w-full cursor-pointer rounded-2xl bg-slate-900 px-4 py-4 text-sm font-semibold text-white transition hover:bg-slate-800 active:scale-[0.99]"
         >
           Stop Coaching

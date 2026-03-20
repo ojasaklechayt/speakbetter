@@ -6,6 +6,7 @@ import tailwindcss from '@tailwindcss/vite'
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   build: {
+    assetsInlineLimit: 0,
     rollupOptions: {
       input: {
         sidepanel: resolve(__dirname, 'index.html'),

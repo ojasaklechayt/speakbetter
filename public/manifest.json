@@ -4,7 +4,11 @@
   "description": "A Chrome side panel coach for live meeting communication.",
   "version": "0.0.0",
   "permissions": ["storage", "tabs", "sidePanel"],
-  "host_permissions": ["https://meet.google.com/*"],
+  "host_permissions": [
+    "https://meet.google.com/*",
+    "https://generativelanguage.googleapis.com/*",
+    "wss://generativelanguage.googleapis.com/*"
+  ],
   "action": {
     "default_title": "Open SpeakBetter"
   },

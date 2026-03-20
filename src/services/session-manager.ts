@@ -233,7 +233,8 @@ export class SessionManager {
       ...sessionWithUser,
     }
 
-    return indexedDbDriver.add(SESSION_STORE, record)
+    await indexedDbDriver.add(SESSION_STORE, record)
+    return sessionWithUser
   }
 
   // Step 7: Replace an existing session with the latest full version.
@@ -244,7 +245,8 @@ export class SessionManager {
       ...sessionWithUser,
     }
 
-    return indexedDbDriver.put(SESSION_STORE, record)
+    await indexedDbDriver.put(SESSION_STORE, record)
+    return sessionWithUser
   }
 
   // Step 8: Load one communication session by session id.
