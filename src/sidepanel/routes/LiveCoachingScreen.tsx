@@ -9,6 +9,7 @@ import type {
   LiveSessionMetric,
   LiveWatchItem,
 } from '../../services/session-manager'
+import { REQUIRED_LIVE_METRIC_LABELS } from '../../utils/live-session'
 import { groupTranscriptPoints } from '../../utils/transcript'
 
 type LiveCoachingScreenProps = {
@@ -20,6 +21,15 @@ type ExtensionLiveState = {
   currentTabUrl: string
   isOnMeetingPage: boolean
 }
+
+const DEFAULT_LIVE_METRICS: LiveSessionMetric[] = [
+  { label: REQUIRED_LIVE_METRIC_LABELS[0], value: '--', detail: 'available after speech is captured' },
+  { label: REQUIRED_LIVE_METRIC_LABELS[1], value: '--', detail: 'waiting for session analysis' },
+  { label: REQUIRED_LIVE_METRIC_LABELS[2], value: '--', detail: 'starts after you begin speaking' },
+  { label: REQUIRED_LIVE_METRIC_LABELS[3], value: '--', detail: 'measured during the session' },
+  { label: REQUIRED_LIVE_METRIC_LABELS[4], value: '--', detail: 'calculated from delivery signals' },
+  { label: REQUIRED_LIVE_METRIC_LABELS[5], value: '--', detail: 'available once coaching is connected' },
+]
 
 function LiveCoachingScreen({ sessionId, onStop }: LiveCoachingScreenProps) {
   const [extensionState, setExtensionState] = useState<ExtensionLiveState>({
@@ -126,7 +136,7 @@ function LiveCoachingScreen({ sessionId, onStop }: LiveCoachingScreenProps) {
   }, [])
 
   const insight = session?.liveSession.insight
-  const liveMetrics = session?.liveSession.metrics ?? []
+  const liveMetrics = mergeLiveMetrics(session?.liveSession.metrics ?? [])
   const watchItems = session?.liveSession.watch ?? []
   const transcriptLines = groupTranscriptPoints(session?.liveSession.transcript ?? [])
 
@@ -221,22 +231,14 @@ function LiveCoachingScreen({ sessionId, onStop }: LiveCoachingScreenProps) {
             Metrics
           </p>
           <div className="mt-2 grid grid-cols-2 gap-2">
-            {liveMetrics.length > 0 ? (
-              liveMetrics.map((metric: LiveSessionMetric) => (
-                <LiveMetricCard
-                  key={metric.label}
-                  label={metric.label}
-                  value={metric.value}
-                  detail={metric.detail}
-                />
-              ))
-            ) : (
+            {liveMetrics.map((metric: LiveSessionMetric) => (
               <LiveMetricCard
-                label="Waiting"
-                value="--"
-                detail="Metrics will appear after the model stores a live update."
+                key={metric.label}
+                label={metric.label}
+                value={metric.value}
+                detail={metric.detail}
               />
-            )}
+            ))}
           </div>
         </section>
 
@@ -278,6 +280,30 @@ function LiveCoachingScreen({ sessionId, onStop }: LiveCoachingScreenProps) {
       </div>
     </div>
   )
+}
+
+function mergeLiveMetrics(metrics: LiveSessionMetric[]) {
+  const metricsByLabel = new Map(
+    metrics.map((metric) => [normalizeMetricLabel(metric.label), metric] as const),
+  )
+
+  return DEFAULT_LIVE_METRICS.map((defaultMetric) => {
+    const savedMetric = metricsByLabel.get(normalizeMetricLabel(defaultMetric.label))
+
+    if (!savedMetric) {
+      return defaultMetric
+    }
+
+    return {
+      label: defaultMetric.label,
+      value: savedMetric.value || defaultMetric.value,
+      detail: savedMetric.detail || defaultMetric.detail,
+    }
+  })
+}
+
+function normalizeMetricLabel(label: string) {
+  return label.trim().toLowerCase()
 }
 
 function LiveMetricCard({

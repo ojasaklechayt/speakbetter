@@ -2,11 +2,22 @@ import type { LiveServerMessage } from '@google/genai'
 import type { LiveSessionData } from '../services/session-manager'
 
 export type LiveSessionUpdate = Pick<LiveSessionData, 'insight' | 'watch' | 'metrics'>
+export const REQUIRED_LIVE_METRIC_LABELS = [
+  'Fillers',
+  'Fillers/min',
+  'WPM',
+  'Pause avg',
+  'Confidence',
+  'Relevance',
+] as const
 const LIVE_SESSION_UPDATE_KEYS = ['insight', 'watch', 'metrics'] as const
 const LIVE_SESSION_INSIGHT_KEYS = ['impact', 'title', 'description'] as const
 const LIVE_WATCH_ITEM_KEYS = ['title'] as const
 const LIVE_METRIC_KEYS = ['label', 'value', 'detail'] as const
 const ALLOWED_IMPACTS = new Set(['low', 'medium', 'high', 'neutral'])
+const REQUIRED_LIVE_METRIC_LABELS_SET = new Set(
+  REQUIRED_LIVE_METRIC_LABELS.map((label) => label.toLowerCase()),
+)
 
 export const STORE_LIVE_SESSION_UPDATE_TOOL = {
   name: 'store_live_session_update',
@@ -148,18 +159,37 @@ function isWatchItems(value: unknown): value is LiveSessionUpdate['watch'] {
 }
 
 function isMetrics(value: unknown): value is LiveSessionUpdate['metrics'] {
-  return (
-    Array.isArray(value) &&
-    value.every(
-      (item) =>
-        isRecord(item) &&
-        hasExactKeys(item, LIVE_METRIC_KEYS) &&
-        typeof item.label === 'string' &&
-        item.label.trim().length > 0 &&
-        typeof item.value === 'string' &&
-        item.value.trim().length > 0 &&
-        typeof item.detail === 'string' &&
-        item.detail.trim().length > 0,
-    )
-  )
+  if (!Array.isArray(value) || value.length !== REQUIRED_LIVE_METRIC_LABELS.length) {
+    return false
+  }
+
+  const normalizedLabels = new Set<string>()
+
+  for (const item of value) {
+    if (
+      !isRecord(item) ||
+      !hasExactKeys(item, LIVE_METRIC_KEYS) ||
+      typeof item.label !== 'string' ||
+      item.label.trim().length === 0 ||
+      typeof item.value !== 'string' ||
+      item.value.trim().length === 0 ||
+      typeof item.detail !== 'string' ||
+      item.detail.trim().length === 0
+    ) {
+      return false
+    }
+
+    const normalizedLabel = item.label.trim().toLowerCase()
+
+    if (
+      !REQUIRED_LIVE_METRIC_LABELS_SET.has(normalizedLabel) ||
+      normalizedLabels.has(normalizedLabel)
+    ) {
+      return false
+    }
+
+    normalizedLabels.add(normalizedLabel)
+  }
+
+  return normalizedLabels.size === REQUIRED_LIVE_METRIC_LABELS.length
 }

@@ -86,7 +86,18 @@ Live tool-call rules:
 - the top-level object must contain exactly `insight`, `watch`, and `metrics`
 - `insight` must contain exactly `impact`, `title`, and `description`
 - each `watch` item must contain exactly `title`
-- each `metrics` item must contain exactly `label`, `value`, and `detail`
+- `metrics` must contain exactly 6 items, one for each of these labels:
+  - `Fillers`
+  - `Fillers/min`
+  - `WPM`
+  - `Pause avg`
+  - `Confidence`
+  - `Relevance`
+- each metric item must contain exactly `label`, `value`, and `detail`
+- do not omit `Confidence`
+- `Confidence` must estimate speaking confidence from delivery signals such as hesitation, filler density, pacing stability, directness, and certainty of phrasing
+- return `Confidence.value` as a string suitable for UI display, for example `72%`, `Low`, `Medium`, or `High`
+- if a metric is not yet reliable, still include it with a safe placeholder string value and an explanatory `detail`
 - `impact` must be one of `low`, `medium`, `high`, or `neutral`
 - `watch` should contain 1 to 3 items
 - do not include `transcript` in the tool call
