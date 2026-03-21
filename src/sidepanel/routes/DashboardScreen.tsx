@@ -1,26 +1,52 @@
+import type { CommunicationSession } from '../../services/session-manager'
+
 type DashboardScreenProps = {
   onStartSession?: () => void
   onOpenHistory?: () => void
   onOpenSettings?: () => void
+  onOpenSession?: (sessionId: string) => void
   isOnMeetingPage?: boolean
   currentTabUrl?: string
   isStartingSession?: boolean
   startSessionError?: string
+  sessions?: CommunicationSession[]
 }
 
 function DashboardScreen({
   onStartSession,
   onOpenHistory,
   onOpenSettings,
+  onOpenSession,
   isOnMeetingPage = false,
   currentTabUrl = '',
   isStartingSession = false,
   startSessionError = '',
+  sessions = [],
 }: DashboardScreenProps) {
+  const completedSessions = sessions.filter((session) => Boolean(session.metadata.endedAt))
+  const recentSessions = completedSessions.slice(0, 3)
+  const averageConfidence = getAverageConfidence(completedSessions)
+  const latestFillersMetric = getLatestMetricValue(completedSessions, 'Fillers')
+
   const dashboardScoreTiles = [
-    { label: 'Sessions', value: '0', detail: 'no completed sessions yet' },
-    { label: 'Confidence', value: '--', detail: 'available after your first session' },
-    { label: 'Fillers', value: '--', detail: 'tracked once coaching runs' },
+    {
+      label: 'Sessions',
+      value: String(completedSessions.length),
+      detail:
+        completedSessions.length > 0 ? 'completed sessions saved locally' : 'no completed sessions yet',
+    },
+    {
+      label: 'Confidence',
+      value: averageConfidence,
+      detail:
+        averageConfidence !== '--' ? 'average across completed sessions' : 'available after your first session',
+    },
+    {
+      label: 'Fillers',
+      value: latestFillersMetric,
+      detail:
+        latestFillersMetric !== '--' ? 'latest completed session value' : 'tracked once coaching runs',
+    },
   ]
 
   return (
@@ -106,12 +132,40 @@ function DashboardScreen({
             </button>
           </div>
 
-          <div className="rounded-2xl border border-dashed border-slate-300 bg-white/70 p-5 text-center">
-            <p className="text-sm font-semibold text-slate-950">No session history yet</p>
-            <p className="mt-2 text-sm leading-6 text-slate-600">
-              Start your first coaching session in Google Meet. Completed sessions will appear here.
-            </p>
-          </div>
+          {recentSessions.length > 0 ? (
+            <div className="space-y-3">
+              {recentSessions.map((session) => (
+                <button
+                  key={session.metadata.sessionId}
+                  type="button"
+                  onClick={() => onOpenSession?.(session.metadata.sessionId)}
+                  className="w-full cursor-pointer rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:border-slate-300 hover:bg-slate-50 active:scale-[0.99]"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-950">{session.metadata.title}</p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        {formatSessionDate(session.metadata.startedAt)}
+                      </p>
+                    </div>
+                    <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
+                      {session.metadata.totalDuration}
+                    </span>
+                  </div>
+                  <p className="mt-3 text-sm leading-6 text-slate-600">
+                    {session.postSession.verdict || session.liveSession.insight.description}
+                  </p>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-dashed border-slate-300 bg-white/70 p-5 text-center">
+              <p className="text-sm font-semibold text-slate-950">No session history yet</p>
+              <p className="mt-2 text-sm leading-6 text-slate-600">
+                Start your first coaching session in Google Meet. Completed sessions will appear here.
+              </p>
+            </div>
+          )}
         </section>
       </div>
 
@@ -131,6 +185,43 @@ function DashboardScreen({
       </div>
     </div>
   )
+}
+
+function getAverageConfidence(sessions: CommunicationSession[]) {
+  const values = sessions
+    .map((session) => Number.parseFloat(session.postSession.confidence))
+    .filter((value) => Number.isFinite(value))
+
+  if (values.length === 0) {
+    return '--'
+  }
+
+  return `${Math.round(values.reduce((sum, value) => sum + value, 0) / values.length)}%`
+}
+
+function getLatestMetricValue(sessions: CommunicationSession[], label: string) {
+  for (const session of sessions) {
+    const metric = session.postSession.metrics.find((item) => item.label === label)
+
+    if (metric?.value) {
+      return metric.value
+    }
+  }
+
+  return '--'
+}
+
+function formatSessionDate(timestamp: string) {
+  const date = new Date(timestamp)
+
+  return Number.isNaN(date.valueOf())
+    ? timestamp
+    : date.toLocaleDateString(undefined, {
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+      })
 }
 
 export default DashboardScreen

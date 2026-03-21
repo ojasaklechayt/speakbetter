@@ -1,11 +1,13 @@
+import type { AuthCredentials } from '../../services/session-manager'
 import { sessionManager } from '../../services'
 
 type SettingsScreenProps = {
+  auth?: AuthCredentials | null
   onBack?: () => void
   onLogout?: () => void
 }
 
-function SettingsScreen({ onBack, onLogout }: SettingsScreenProps) {
+function SettingsScreen({ auth, onBack, onLogout }: SettingsScreenProps) {
   async function handleExportData() {
     await sessionManager.exportData()
   }
@@ -38,12 +40,12 @@ function SettingsScreen({ onBack, onLogout }: SettingsScreenProps) {
         </header>
 
         <SettingsCard title="Profile" description="Update the identity used across your session history.">
-          <Field label="Name" value="ojas" />
+          <Field label="Name" value={auth?.username || 'Not configured'} />
         </SettingsCard>
 
         <SettingsCard title="Provider" description="Google API key powers the coaching experience.">
           <Field label="Provider" value="Google Gemini" />
-          <Field label="API key status" value="Configured" />
+          <Field label="API key status" value={auth?.apiKey ? 'Configured' : 'Missing'} />
         </SettingsCard>
 
         <SettingsCard title="Recording and privacy" description="Coaching starts only after explicit user action.">

@@ -2,9 +2,14 @@ import { useEffect, useState } from 'react'
 
 import DashboardScreen from './DashboardScreen'
 import LiveCoachingScreen from './LiveCoachingScreen'
+import SessionDetailScreen from './SessionDetailScreen'
 import SessionHistoryScreen from './SessionHistoryScreen'
 import SettingsScreen from './SettingsScreen'
 import { googleService, liveSessionService, sessionManager } from '../../services'
+import type {
+  AuthCredentials,
+  CommunicationSession,
+} from '../../services/session-manager'
 import { getMeetingIdFromUrl } from '../../utils/meeting'
 
 type MeetingGateState = {
@@ -22,7 +27,7 @@ type FormState = {
 
 function OnboardingScreen() {
   const [screen, setScreen] = useState<
-    'onboarding' | 'dashboard' | 'live' | 'history' | 'settings'
+    'onboarding' | 'dashboard' | 'live' | 'history' | 'settings' | 'detail'
   >('onboarding')
   const [values, setValues] = useState<FormState>({
     name: '',
@@ -43,6 +48,9 @@ function OnboardingScreen() {
     useState(false)
   const [startSessionError, setStartSessionError] = useState('')
   const [activeSessionId, setActiveSessionId] = useState('')
+  const [selectedSessionId, setSelectedSessionId] = useState('')
+  const [auth, setAuth] = useState<AuthCredentials | null>(null)
+  const [sessions, setSessions] = useState<CommunicationSession[]>([])
 
   const ready =
     values.name.trim().length > 0 &&
@@ -58,6 +66,8 @@ function OnboardingScreen() {
       if (cancelled) {
         return
       }
+
+      setAuth(auth)
 
       if (auth?.apiKey) {
         setSubmitted(true)
@@ -76,6 +86,15 @@ function OnboardingScreen() {
       cancelled = true
     }
   }, [])
+
+  useEffect(() => {
+    if (!submitted) {
+      setSessions([])
+      return
+    }
+
+    return liveSessionService.subscribeSessions(setSessions)
+  }, [submitted])
 
   useEffect(() => {
     if (typeof chrome === 'undefined' || !chrome.storage?.local) {
@@ -175,6 +194,7 @@ function OnboardingScreen() {
       password: values.password,
       apiKey: values.googleApiKey.trim(),
     })
+    setAuth(await sessionManager.getAuth())
 
     setSubmitted(true)
     setScreen('dashboard')
@@ -191,6 +211,9 @@ function OnboardingScreen() {
     setIsWaitingForMicrophonePermission(false)
     setStartSessionError('')
     setActiveSessionId('')
+    setSelectedSessionId('')
+    setAuth(null)
+    setSessions([])
     setValues({
       name: '',
       password: '',
@@ -285,6 +308,11 @@ function OnboardingScreen() {
         startSessionError={startSessionError}
         onOpenHistory={() => setScreen('history')}
         onOpenSettings={() => setScreen('settings')}
+        onOpenSession={(sessionId) => {
+          setSelectedSessionId(sessionId)
+          setScreen('detail')
+        }}
+        sessions={sessions}
       />
     )
   }
@@ -311,6 +339,21 @@ function OnboardingScreen() {
     return (
       <SessionHistoryScreen
         onBack={() => setScreen('dashboard')}
+        sessions={sessions}
+        onOpenSession={(sessionId) => {
+          setSelectedSessionId(sessionId)
+          setScreen('detail')
+        }}
+      />
+    )
+  }
+
+  if (submitted && screen === 'detail') {
+    return (
+      <SessionDetailScreen
+        sessionId={selectedSessionId}
+        session={sessions.find((session) => session.metadata.sessionId === selectedSessionId) ?? null}
+        onBack={() => setScreen('history')}
       />
     )
   }
@@ -320,6 +363,7 @@ function OnboardingScreen() {
       <SettingsScreen
         onBack={() => setScreen('dashboard')}
         onLogout={handleLogout}
+        auth={auth}
       />
     )
   }
