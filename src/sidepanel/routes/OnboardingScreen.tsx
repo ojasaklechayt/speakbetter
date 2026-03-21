@@ -253,24 +253,8 @@ function OnboardingScreen() {
 
           await liveSessionService.appendTranscriptPoint(sessionId, text)
         },
-        onOutputTranscript: async (text) => {
-          if (!text.trim()) {
-            return
-          }
-
-          await liveSessionService.appendTranscriptPoint(
-            sessionId,
-            `[Coach] ${text}`,
-          )
-        },
-        onMessage: async (data) => {
-          console.log('[Gemini message]', data)
-        },
-        onError: (event) => {
-          console.error('[Gemini live error]', event)
-        },
-        onClose: (event) => {
-          console.log('[Gemini live closed]', event)
+        onLiveSessionUpdate: async (update) => {
+          await liveSessionService.updateLiveSession(sessionId, update)
         },
       })
       await googleService.connect()
@@ -308,6 +292,7 @@ function OnboardingScreen() {
   if (submitted && screen === 'live') {
     return (
       <LiveCoachingScreen
+        sessionId={activeSessionId}
         onStop={() => {
           googleService.setHandlers({})
           if (activeSessionId) {

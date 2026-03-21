@@ -4,6 +4,7 @@ import {
   type SessionId,
   sessionManager,
 } from './session-manager'
+import { formatDuration } from '../utils/live-session'
 
 export interface StartLiveSessionInput {
   meetingId: string
@@ -162,17 +163,6 @@ export class LiveSessionService {
       this.events.emit('sessionsChanged', sessions)
     })
   }
-}
-
-// Format session duration as mm:ss for the current UI model.
-function formatDuration(durationMs: number) {
-  const totalSeconds = Math.max(0, Math.floor(durationMs / 1000))
-  const minutes = Math.floor(totalSeconds / 60)
-  const seconds = totalSeconds % 60
-
-  return `${minutes.toString().padStart(2, '0')}:${seconds
-    .toString()
-    .padStart(2, '0')}`
 }
 
 export const liveSessionService = new LiveSessionService()

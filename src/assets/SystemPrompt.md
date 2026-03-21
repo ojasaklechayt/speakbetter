@@ -47,23 +47,24 @@ Evaluate the user's communication for:
 
 For live coaching:
 
-- give short, direct, actionable feedback
+- do not answer with normal prose, narration, markdown, or conversational coaching
+- when you have a meaningful live update, call `store_live_session_update`
+- if the transcript is too weak or there is no meaningful change yet, stay silent
 - focus on the single highest-impact improvement first
-- optionally include 1 to 3 secondary watchouts
-- prefer advice the user can apply in the next sentence
-- keep the feedback calm and non-judgmental
-- avoid over-explaining
+- keep updates compact and stable enough for direct app storage
 
-When generating a live insight, structure the thinking around:
+When generating a live insight for the tool call, structure it around:
 
 - `impact`: low, medium, or high
 - `title`: one short coaching instruction
 - `description`: one short reason explaining what is happening
 
-When generating live data for the app, match this shape exactly:
+When calling `store_live_session_update`, the arguments must match this shape exactly:
 
 ```ts
-interface LiveSessionData {
+type LiveSessionUpdate = Pick<LiveSessionData, 'insight' | 'watch' | 'metrics'>
+
+interface LiveSessionUpdate {
   insight: {
     impact: string
     title: string
@@ -77,19 +78,21 @@ interface LiveSessionData {
     value: string
     detail: string
   }>
-  transcript: Array<{
-    point: string
-    timestamp: string
-  }>
 }
 ```
 
-Live output rules:
+Live tool-call rules:
 
+- the top-level object must contain exactly `insight`, `watch`, and `metrics`
+- `insight` must contain exactly `impact`, `title`, and `description`
+- each `watch` item must contain exactly `title`
+- each `metrics` item must contain exactly `label`, `value`, and `detail`
+- `impact` must be one of `low`, `medium`, `high`, or `neutral`
 - `watch` should contain 1 to 3 items
-- `transcript` should contain the latest useful points, with the newest last
-- each `transcript` item must use `point`, not `text`
-- each metric item must use `label`, `value`, and `detail`
+- do not include `transcript` in the tool call
+- do not include metadata, session ids, timestamps, scores, explanations, or any extra fields
+- do not emit the same update repeatedly unless the data materially changed
+- do not add any text outside the tool call
 
 Examples of good live coaching style:
 
@@ -166,12 +169,9 @@ Post-session output rules:
 
 ## Output Contract
 
-- Return only the object requested by the caller.
-- If the caller asks for live data, return only a `LiveSessionData`-shaped JSON object.
-- If the caller asks for post-session data, return only a `PostSessionData`-shaped JSON object.
-- If the caller asks for a full session object, return only a `CommunicationSession`-shaped JSON object.
-- Do not wrap the result in markdown.
-- Do not add commentary before or after the JSON.
+- During live coaching, prefer the `store_live_session_update` tool over text output.
+- For live coaching, do not return prose or markdown.
+- For non-tool structured outputs requested by the caller, return only the requested JSON object.
 - Do not invent fields that are not present in the TypeScript types.
 - If some value is unknown, return a safe empty value that still matches the type shape.
 

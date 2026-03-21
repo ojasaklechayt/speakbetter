@@ -1,14 +1,27 @@
+import {
+  FunctionCallingConfigMode,
+  GoogleGenAI,
+  Modality,
+  type FunctionCall,
+  type LiveServerMessage,
+  type Session,
+} from '@google/genai'
 import systemPrompt from '../assets/SystemPrompt.md?raw'
+import { bytesToBase64 } from '../utils/base64'
+import {
+  extractTextFromServerContent,
+  parseLiveSessionUpdate,
+  STORE_LIVE_SESSION_UPDATE_TOOL,
+  type LiveSessionUpdate,
+} from '../utils/live-session'
 import { sessionManager } from './session-manager'
 
 type GoogleLiveHandlers = {
-  onInputTranscript?: (text: string)
-    => void
-  onOutputTranscript?: (text: string)
-    => void
+  onInputTranscript?: (text: string) => void
+  onOutputTranscript?: (text: string) => void
+  onLiveSessionUpdate?: (update: LiveSessionUpdate) => Promise<void> | void
   onOpen?: () => void
-  onClose?: (event: CloseEvent) =>
-    void
+  onClose?: (event: CloseEvent) => void
   onError?: (event: Event) => void
   onMessage?: (data: unknown) => void
 }
@@ -18,26 +31,21 @@ type GoogleLiveOptions = {
   systemInstruction?: string
 }
 
-type GoogleLiveMessage = {
-  serverContent?: {
-    inputTranscription?: {
-      text?: string
-    }
-    outputTranscription?: {
-      text?: string
-    }
-  }
-}
-
-const DEFAULT_MODEL = 'models/gemini-2.5-flash-native-audio-preview-12-2025'
+const DEFAULT_MODEL = 'gemini-2.5-flash-native-audio-preview-12-2025'
 const DEFAULT_SYSTEM_INSTRUCTION = systemPrompt
-
+const PCM_AUDIO_MIME_TYPE = 'audio/pcm;rate=16000'
 export class GoogleLiveService {
-  private ws: WebSocket | null = null
+  private session: Session | null = null
   private apiKey = ''
+  private ai: GoogleGenAI | null = null
   private handlers: GoogleLiveHandlers = {}
   private readonly model: string
   private readonly systemInstruction: string
+  private isSessionConnecting = false
+  private isSessionOpen = false
+  private lastInputTranscript = ''
+  private outputTurnSnapshot = ''
+  private outputTurnBuffer = ''
 
   constructor(options: GoogleLiveOptions = {}) {
     this.model = options.model ?? DEFAULT_MODEL
@@ -50,20 +58,8 @@ export class GoogleLiveService {
   }
 
   async connect() {
-    const current = this.ws
-
-    if (
-      current &&
-      (current.readyState === WebSocket.CONNECTING ||
-        current.readyState === WebSocket.OPEN)
-    ) {
+    if (this.session && (this.isSessionConnecting || this.isSessionOpen)) {
       return
-    }
-
-    // If an older socket is still finishing its close handshake, drop the ref
-    // and create a fresh one.
-    if (current && current.readyState === WebSocket.CLOSING) {
-      this.ws = null
     }
 
     if (!this.apiKey) {
@@ -75,159 +71,198 @@ export class GoogleLiveService {
       throw new Error('GoogleLiveService requires an API key before connect().')
     }
 
-    const url =
-      `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${this.apiKey}`
+    this.ai ??= new GoogleGenAI({ apiKey: this.apiKey })
+    this.resetTurnState()
+    this.isSessionConnecting = true
+    this.isSessionOpen = false
 
-    const ws = new WebSocket(url)
-    this.ws = ws
+    const liveConfig = {
+      responseModalities: [Modality.AUDIO],
+      inputAudioTranscription: {},
+      outputAudioTranscription: {},
+      systemInstruction: this.systemInstruction,
+      tools: [{ functionDeclarations: [STORE_LIVE_SESSION_UPDATE_TOOL] }],
+      // The Live SDK typings do not expose toolConfig, but the live API accepts
+      // the same function-calling config shape used elsewhere in the SDK.
+      toolConfig: {
+        functionCallingConfig: {
+          mode: FunctionCallingConfigMode.ANY,
+          allowedFunctionNames: [STORE_LIVE_SESSION_UPDATE_TOOL.name],
+        },
+      },
+    } as unknown as NonNullable<
+      Parameters<GoogleGenAI['live']['connect']>[0]['config']
+    >
 
-    ws.onopen = () => {
-      console.log('[GoogleLiveService] WebSocket opened')
-
-      ws.send(
-        JSON.stringify({
-          setup: {
-            model: this.model,
-            generationConfig: {
-              responseModalities: ['AUDIO'],
-            },
-            inputAudioTranscription: {},
-            outputAudioTranscription: {},
-            systemInstruction: {
-              parts: [{ text: this.systemInstruction }],
-            },
+    try {
+      this.session = await this.ai.live.connect({
+        model: this.model,
+        config: liveConfig,
+        callbacks: {
+          onopen: () => {
+            this.isSessionConnecting = false
+            this.isSessionOpen = true
+            this.handlers.onOpen?.()
           },
-        }),
-      )
-
-      this.handlers.onOpen?.()
-    }
-
-    ws.onmessage = (event) => {
-      if (event.data instanceof Blob) {
-        return
-      }
-
-      if (typeof event.data !== 'string') {
-        console.warn(
-          '[GoogleLiveService] Unsupported WebSocket message type:',
-          event.data,
-        )
-        return
-      }
-
-      console.log('[GoogleLiveService] Raw JSON message', event.data)
-
-      let data: unknown
-
-      try {
-        data = JSON.parse(event.data) as GoogleLiveMessage
-      } catch (error) {
-        console.error(
-          '[GoogleLiveService] Failed to parse WebSocket message:',
-          error,
-          event.data,
-        )
-        return
-      }
-
-      this.handlers.onMessage?.(data)
-
-      const message = data as GoogleLiveMessage
-      const inputText = message.serverContent?.inputTranscription?.text
-      const outputText = message.serverContent?.outputTranscription?.text
-
-      if (inputText) {
-        console.log('[GoogleLiveService] Input transcript', inputText)
-        this.handlers.onInputTranscript?.(inputText)
-      }
-
-      if (outputText) {
-        console.log('[GoogleLiveService] Output transcript', outputText)
-        this.handlers.onOutputTranscript?.(outputText)
-      }
-    }
-
-    ws.onerror = (event) => {
-      console.error('[GoogleLiveService] WebSocket error:', event)
-      this.handlers.onError?.(event)
-    }
-
-    ws.onclose = (event) => {
-      console.log('[GoogleLiveService] WebSocket closed', {
-        code: event.code,
-        reason: event.reason,
-        wasClean: event.wasClean,
+          onmessage: (message) => {
+            void this.handleMessage(message)
+          },
+          onerror: (event) => {
+            this.handlers.onError?.(event)
+          },
+          onclose: (event) => {
+            this.session = null
+            this.isSessionConnecting = false
+            this.isSessionOpen = false
+            this.resetTurnState()
+            this.handlers.onClose?.(event)
+          },
+        },
       })
-
-      // Only clear the ref if this close belongs to the current socket.
-      if (this.ws === ws) {
-        this.ws = null
-      }
-
-      this.handlers.onClose?.(event)
+    } catch (error) {
+      this.session = null
+      this.isSessionConnecting = false
+      this.isSessionOpen = false
+      throw error
     }
   }
 
   sendAudioChunk(chunk: Uint8Array | ArrayBuffer) {
-    const ws = this.ws
+    const session = this.session
 
-    if (!ws || ws.readyState !== WebSocket.OPEN) {
+    if (!session || !this.isSessionOpen) {
       return
     }
 
     const bytes = chunk instanceof Uint8Array ? chunk : new Uint8Array(chunk)
-    const base64 = this.toBase64(bytes)
 
-    ws.send(
-      JSON.stringify({
-        realtimeInput: {
-          mediaChunks: [
-            {
-              mimeType: 'audio/pcm;rate=16000',
-              data: base64,
-            },
-          ],
-        },
-      }),
-    )
+    session.sendRealtimeInput({
+      audio: {
+        data: bytesToBase64(bytes),
+        mimeType: PCM_AUDIO_MIME_TYPE,
+      },
+    })
   }
 
   disconnect() {
-    const ws = this.ws
+    const session = this.session
 
-    if (!ws) {
+    if (!session) {
       return
     }
 
-    if (ws.readyState === WebSocket.CLOSING || ws.readyState === WebSocket.CLOSED) {
-      return
-    }
-
-    if (ws.readyState === WebSocket.CONNECTING) {
-      console.log('[GoogleLiveService] Closing WebSocket while connecting')
-      ws.close()
-      return
-    }
-
-    console.log('[GoogleLiveService] Closing WebSocket with normal closure')
-    ws.close(1000, 'Client disconnect')
+    this.isSessionConnecting = false
+    this.isSessionOpen = false
+    session.close()
+    this.session = null
     this.handlers = {}
+    this.resetTurnState()
   }
 
   isConnected() {
-    return this.ws?.readyState === WebSocket.OPEN
+    return this.session !== null && this.isSessionOpen
   }
 
-  private toBase64(bytes: Uint8Array) {
-    let binary = ''
-    const chunkSize = 0x8000
+  private async handleMessage(message: LiveServerMessage) {
+    this.handlers.onMessage?.(message)
 
-    for (let index = 0; index < bytes.length; index += chunkSize) {
-      binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize))
+    const functionCalls = message.toolCall?.functionCalls
+
+    if (functionCalls?.length) {
+      await this.handleToolCalls(functionCalls)
     }
 
-    return btoa(binary)
+    const serverContent = message.serverContent
+
+    if (!serverContent) {
+      return
+    }
+
+    const inputText = serverContent.inputTranscription?.text?.trim()
+
+    if (inputText && inputText !== this.lastInputTranscript) {
+      this.lastInputTranscript = inputText
+      this.handlers.onInputTranscript?.(inputText)
+    }
+
+    const outputText = extractTextFromServerContent(message).trim()
+
+    if (outputText) {
+      if (outputText.startsWith(this.outputTurnSnapshot)) {
+        this.outputTurnBuffer += outputText.slice(this.outputTurnSnapshot.length)
+      } else if (outputText !== this.outputTurnSnapshot) {
+        this.outputTurnBuffer += outputText
+      }
+
+      this.outputTurnSnapshot = outputText
+    }
+
+    if (serverContent.turnComplete) {
+      const completedOutput = this.outputTurnBuffer.trim()
+
+      if (completedOutput) {
+        this.handlers.onOutputTranscript?.(completedOutput)
+      }
+
+      this.outputTurnSnapshot = ''
+      this.outputTurnBuffer = ''
+    }
+  }
+
+  private resetTurnState() {
+    this.lastInputTranscript = ''
+    this.outputTurnSnapshot = ''
+    this.outputTurnBuffer = ''
+  }
+
+  private async handleToolCalls(functionCalls: FunctionCall[]) {
+    const session = this.session
+
+    if (!session) {
+      return
+    }
+
+    const functionResponses = await Promise.all(
+      functionCalls.map(async (functionCall) => {
+        const functionName = functionCall.name ?? 'unknown_tool'
+        const functionId = functionCall.id
+
+        if (functionName !== STORE_LIVE_SESSION_UPDATE_TOOL.name) {
+          return {
+            id: functionId,
+            name: functionName,
+            response: {
+              error: `Unsupported tool: ${functionName}`,
+            },
+          }
+        }
+
+        try {
+          const update = parseLiveSessionUpdate(functionCall.args ?? {})
+          await this.handlers.onLiveSessionUpdate?.(update)
+
+          return {
+            id: functionId,
+            name: functionName,
+            response: {
+              output: {
+                stored: true,
+              },
+            },
+          }
+        } catch (error) {
+          return {
+            id: functionId,
+            name: functionName,
+            response: {
+              error: error instanceof Error ? error.message : 'Failed to store live session update.',
+            },
+          }
+        }
+      }),
+    )
+
+    session.sendToolResponse({ functionResponses })
   }
 }
 
